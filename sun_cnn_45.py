@@ -5,13 +5,14 @@ import scipy.io as sio
 import matplotlib.pyplot as plt
 
 torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.benchmark = False
 
 ### set a random seed for reproducibility (do not change this)
 seed = 42
 np.random.seed(seed)
 torch.manual_seed(seed)
 
+fig_name = 'net-train_lessdeep.pdf'
 
 ### Define the Convolutional Neural Network Model
 class CNN(torch.nn.Module):
@@ -19,17 +20,27 @@ class CNN(torch.nn.Module):
         super(CNN, self).__init__()
 
         ### Initialize the various Network Layers
-        self.conv1 = torch.nn.Conv2d(3, 16, stride=4, kernel_size=(9, 9))  # 3 input channels, 16 output channels
+        self.conv1 = torch.nn.Conv2d(3, 16, stride=3, kernel_size=(10, 10))  # 3 input channels, 16 output channels
         self.pool1 = torch.nn.MaxPool2d((3, 3), stride=3)
         self.relu = torch.nn.ReLU()
-        self.conv2 = torch.nn.Conv2d(16, num_bins, kernel_size=(5, 18))
+
+        self.conv2 = torch.nn.Conv2d(16, 16, stride=1, kernel_size=(4, 4))  # 3 input channels, 16 output channels
+        self.pool2 = torch.nn.MaxPool2d((2, 2), stride=2)
+        self.relu = torch.nn.ReLU()
+
+        self.fully_connected = torch.nn.Conv2d(16, num_bins, kernel_size=(1, 10))
 
     ###Define what the forward pass through the network is
     def forward(self, x):
         x = self.conv1(x)
         x = self.pool1(x)
         x = self.relu(x)
+
         x = self.conv2(x)
+        x = self.pool2(x)
+        x = self.relu(x)
+
+        x = self.fully_connected(x)
 
         x = x.squeeze()  # (Batch_size x num_bins x 1 x 1) to (Batch_size x num_bins)
 
@@ -86,13 +97,15 @@ if __name__ == "__main__":
     CE_loss = torch.nn.CrossEntropyLoss(
         reduction='sum')  # initialize our loss (specifying that the output as a sum of all sample losses)
     params = list(cnn.parameters())
-    optimizer = torch.optim.Adam(params, lr=1e-3,
-                                 weight_decay=0.0)  # initialize our optimizer (Adam, an alternative to stochastic gradient descent)
+    optimizer = torch.optim.Adam(params, lr=5e-4,
+                                 weight_decay=5.0)  # initialize our optimizer (Adam, an alternative to stochastic gradient descent)
 
     ### Initialize our dataloader for the training and validation set (specifying minibatch size of 128)
     dsets = {x: dataloader('{}.mat'.format(x), binsize=binsize) for x in ['train', 'val']}
     dset_loaders = {x: torch.utils.data.DataLoader(dsets[x], batch_size=128, shuffle=True, num_workers=4) for x in
                     ['train', 'val']}
+
+    
 
     loss = {'train': [], 'val': []}
     top1err = {'train': [], 'val': []}
@@ -100,7 +113,7 @@ if __name__ == "__main__":
     best_err = 1
 
     ### Iterate through the data for the desired number of epochs
-    for epoch in range(0, 20):
+    for epoch in range(0, 30):
         for mode in ['train', 'val']:  # iterate
             epoch_loss = 0
             top1_incorrect = 0
@@ -175,4 +188,4 @@ if __name__ == "__main__":
     ax3.set_xlabel('Epoch', fontsize=12)
     plt.tight_layout()
     plt.show()
-    fig.savefig('net-train.pdf')
+    fig.savefig(fig_name)
