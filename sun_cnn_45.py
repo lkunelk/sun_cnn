@@ -20,15 +20,15 @@ class CNN(torch.nn.Module):
         super(CNN, self).__init__()
 
         ### Initialize the various Network Layers
-        self.conv1 = torch.nn.Conv2d(3, 16, stride=3, kernel_size=(10, 10))  # 3 input channels, 16 output channels
+        self.conv1 = torch.nn.Conv2d(3, 20, stride=3, kernel_size=(10, 10))  # 3 input channels, 16 output channels
         self.pool1 = torch.nn.MaxPool2d((3, 3), stride=3)
         self.relu = torch.nn.ReLU()
 
-        self.conv2 = torch.nn.Conv2d(16, 16, stride=1, kernel_size=(4, 4))  # 3 input channels, 16 output channels
+        self.conv2 = torch.nn.Conv2d(20, 30, stride=1, kernel_size=(4, 4))  # 3 input channels, 16 output channels
         self.pool2 = torch.nn.MaxPool2d((2, 2), stride=2)
         self.relu = torch.nn.ReLU()
 
-        self.fully_connected = torch.nn.Conv2d(16, num_bins, kernel_size=(1, 10))
+        self.fully_connected = torch.nn.Conv2d(30, num_bins, kernel_size=(1, 10))
 
     ###Define what the forward pass through the network is
     def forward(self, x):
@@ -97,15 +97,18 @@ if __name__ == "__main__":
     CE_loss = torch.nn.CrossEntropyLoss(
         reduction='sum')  # initialize our loss (specifying that the output as a sum of all sample losses)
     params = list(cnn.parameters())
-    optimizer = torch.optim.Adam(params, lr=5e-4,
-                                 weight_decay=5.0)  # initialize our optimizer (Adam, an alternative to stochastic gradient descent)
+    optimizer = torch.optim.Adam(params, lr=1e-3,
+                                 weight_decay=1.0)  # initialize our optimizer (Adam, an alternative to stochastic gradient descent)
 
     ### Initialize our dataloader for the training and validation set (specifying minibatch size of 128)
     dsets = {x: dataloader('{}.mat'.format(x), binsize=binsize) for x in ['train', 'val']}
     dset_loaders = {x: torch.utils.data.DataLoader(dsets[x], batch_size=128, shuffle=True, num_workers=4) for x in
                     ['train', 'val']}
 
-    
+    mean_zero = np.zeros((3, 68, 224))
+    size = len(dsets['train'])
+    for data in dsets['train']:
+        mean_zero += data[0]/size
 
     loss = {'train': [], 'val': []}
     top1err = {'train': [], 'val': []}
@@ -113,7 +116,7 @@ if __name__ == "__main__":
     best_err = 1
 
     ### Iterate through the data for the desired number of epochs
-    for epoch in range(0, 30):
+    for epoch in range(0, 20):
         for mode in ['train', 'val']:  # iterate
             epoch_loss = 0
             top1_incorrect = 0
@@ -127,6 +130,7 @@ if __name__ == "__main__":
             dset_size = dset_loaders[mode].dataset.__len__()
             for data in dset_loaders[mode]:  # Iterate through all data (each iteration loads a minibatch)
                 image, target = data
+                image -= torch.tensor(mean_zero).float()
                 image, target = image.type(torch.FloatTensor), target.type(torch.LongTensor)
 
                 optimizer.zero_grad()  # zero the gradients of the cnn weights prior to backprop
