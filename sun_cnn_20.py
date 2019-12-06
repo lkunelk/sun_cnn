@@ -15,22 +15,52 @@ torch.manual_seed(seed)
 class CNN(torch.nn.Module):
     def __init__(self, num_bins): 
         super(CNN, self).__init__()
-        
-            ### Initialize the various Network Layers
-        self.conv1 = torch.nn.Conv2d(3, 16, stride=4, kernel_size=(9,9)) # 3 input channels, 16 output channels
-        self.pool1 = torch.nn.MaxPool2d((3,3),stride=3)
+
+        ### Initialize the various Network Layers
+        self.conv1 = torch.nn.Conv2d(3, 10, stride=1, kernel_size=(9, 9))
+        self.dp1 = torch.nn.Dropout(0.1)
+        self.pool1 = torch.nn.MaxPool2d((2, 2), stride=2)
         self.relu = torch.nn.ReLU()
-        self.conv2 = torch.nn.Conv2d(16,num_bins, kernel_size=(5,18))
+        self.bn1 = torch.nn.BatchNorm2d(num_features=10)
+
+        self.conv2 = torch.nn.Conv2d(10, 20, stride=1, kernel_size=(5, 5), padding=3)
+        self.dp2 = torch.nn.Dropout(0.1)
+        self.pool2 = torch.nn.MaxPool2d((3, 3), stride=3)
+        self.relu = torch.nn.ReLU()
+        self.bn2 = torch.nn.BatchNorm2d(num_features=20)
+
+        self.conv3 = torch.nn.Conv2d(20, 40, stride=1, kernel_size=(3, 3), padding=3)
+        # self.dp3 = torch.nn.Dropout(0.2)
+        self.pool3 = torch.nn.MaxPool2d((2, 2), stride=2)
+        self.relu = torch.nn.ReLU()
+        self.bn3 = torch.nn.BatchNorm2d(num_features=40)
+
+        self.fully_connected = torch.nn.Conv2d(40, num_bins, kernel_size=(7, 20))
 
         ###Define what the forward pass through the network is
+
     def forward(self, x):
-        
         x = self.conv1(x)
+        x = self.dp1(x)
         x = self.pool1(x)
         x = self.relu(x)
+        x = self.bn1(x)
+
         x = self.conv2(x)
-        
-        x = x.squeeze() # (Batch_size x num_bins x 1 x 1) to (Batch_size x num_bins)
+        x = self.dp2(x)
+        x = self.pool2(x)
+        x = self.relu(x)
+        x = self.bn2(x)
+
+        x = self.conv3(x)
+        # x = self.dp3(x)
+        x = self.pool3(x)
+        x = self.relu(x)
+        x = self.bn3(x)
+
+        x = self.fully_connected(x)
+
+        x = x.squeeze()  # (Batch_size x num_bins x 1 x 1) to (Batch_size x num_bins)
 
         return x
 
@@ -62,18 +92,20 @@ if __name__ == "__main__":
     '''
     Initialize the Network
     '''
-    binsize=45 #degrees **set this to 20 for part 2**
+    binsize=20 #degrees **set this to 20 for part 2**
     bin_edges = np.arange(-180,180+1,binsize)
     num_bins = bin_edges.shape[0] - 1
     cnn = CNN(num_bins) #Initialize our CNN Class
-    
+    # cnn = cnn.cuda()
+
     '''
     Uncomment section to get a summary of the network (requires torchsummary to be installed):
         to install: pip install torchsummary
     '''
-    #from torchsummary import summary
-    #inputs = torch.zeros((1,3,68,224))
-    #summary(cnn, input_size=(3, 68, 224))
+    from torchsummary import summary
+    inputs = torch.zeros((1,3,68,224))
+    cnn = cnn.cuda()
+    summary(cnn, input_size=(3, 68, 224))
     
     '''
     Training procedure
@@ -81,12 +113,17 @@ if __name__ == "__main__":
     
     CE_loss = torch.nn.CrossEntropyLoss(reduction='sum') #initialize our loss (specifying that the output as a sum of all sample losses)
     params = list(cnn.parameters())
-    optimizer = torch.optim.Adam(params, lr=1e-3, weight_decay=0.0) #initialize our optimizer (Adam, an alternative to stochastic gradient descent)
+    optimizer = torch.optim.Adam(params, lr=1e-3, weight_decay=1.0) #initialize our optimizer (Adam, an alternative to stochastic gradient descent)
     
         ### Initialize our dataloader for the training and validation set (specifying minibatch size of 128)
     dsets = {x: dataloader('{}.mat'.format(x),binsize=binsize) for x in ['train', 'val']} 
     dset_loaders = {x: torch.utils.data.DataLoader(dsets[x], batch_size=128, shuffle=True, num_workers=4) for x in ['train', 'val']}
-    
+
+    mean_zero = np.zeros((3, 68, 224))
+    size = len(dsets['train'])
+    for data in dsets['train']:
+        mean_zero += data[0]/size
+
     loss = {'train': [], 'val': []}
     top1err = {'train': [], 'val': []}
     top5err = {'train': [], 'val': []}
@@ -106,7 +143,8 @@ if __name__ == "__main__":
             dset_size = dset_loaders[mode].dataset.__len__()
             for data in dset_loaders[mode]:    #Iterate through all data (each iteration loads a minibatch)
                 image, target = data
-                image, target = image.type(torch.FloatTensor), target.type(torch.LongTensor)
+                image = image.type(torch.cuda.FloatTensor) - torch.cuda.FloatTensor(mean_zero)
+                image, target = image.type(torch.cuda.FloatTensor), target.type(torch.cuda.LongTensor)
                 
                 optimizer.zero_grad()    #zero the gradients of the cnn weights prior to backprop
                 pred = cnn(image)   # Forward pass through the network
